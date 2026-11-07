@@ -84,6 +84,7 @@ make vault-init
 | No `vault.yml` yet (new setup) | Generates random passwords, asks for the DuckDNS token, writes `vault.yml` encrypted and a random vault password in `.vault_pass` |
 | `vault.yml` exists, no `.vault_pass` (new machine) | Asks for the existing vault password and checks it |
 | Both exist | Nothing: it never overwrites secrets |
+| `make vault-init HOST=server-2` | Gives that server its own random DB and admin passwords in `inventories/host_vars/server-2/vault.yml` (same `.vault_pass`). Run it before that server's first deploy |
 
 > Back up the vault password (`cat .vault_pass`): without it the vault can never be opened.
 
@@ -93,13 +94,20 @@ make vault-init
 all:
   children:
     webservers:
+      vars:
+        ansible_ssh_private_key_file: ~/.ssh/id_ed25519   # default SSH key
       hosts:
         server-1:
           ansible_host: 203.0.113.10      # the server's public IP
           duckdns_subdomain: mysubdomain  # → wp.mysubdomain.duckdns.org
+        server-2:
+          ansible_host: 203.0.113.20
+          duckdns_subdomain: mysubdomain2
+          ansible_ssh_private_key_file: ~/.ssh/other.pem  # only if it needs another key
 ```
 
-The SSH user and key are set in `ansible.cfg` (`remote_user`, `private_key_file`).
+The SSH user is set in `ansible.cfg` (`remote_user = ubuntu`); the key per server in `hosts.yml`.
+Deploy a single server with `make deploy HOST=server-2`.
 
 **3. Deploy.**
 
@@ -126,6 +134,7 @@ Usernames are in `inventories/group_vars/all/main.yml`; `make vault-view` shows 
 | `make ping` | Check Ansible can reach every server |
 | `make deploy` | Deploy or update every server |
 | `make check` | Dry run: show what `deploy` would change |
+| `… HOST=server-2` | Add to `ping`, `deploy`, `check`, `vault-init`, `vault-view`, `vault-edit` to work on one server only |
 | `make syntax` | Check the playbook for syntax errors |
 | `make vault-init` | Create or unlock the vault (first thing on a new machine or setup) |
 | `make vault-view` | Show the decrypted secrets |
@@ -139,13 +148,15 @@ Usernames are in `inventories/group_vars/all/main.yml`; `make vault-view` shows 
 ```
 cloud-1/
 ├── Makefile                      # shortcuts (see Commands)
-├── ansible.cfg                   # inventory, SSH user and key, vault password file, SSH options
+├── ansible.cfg                   # inventory, SSH user, vault password file, SSH options
 ├── cloud-one-playbook.yml        # the roles, in the order they run
 ├── inventories/
-│   ├── hosts.yml                 # the servers: IP + DuckDNS subdomain of each
-│   └── group_vars/all/
-│       ├── main.yml              # all settings: domains, ports, users, database name
-│       └── vault.yml             # secrets, encrypted with Ansible Vault
+│   ├── hosts.yml                 # the servers: IP, DuckDNS subdomain and SSH key of each
+│   ├── group_vars/all/
+│   │   ├── main.yml              # all settings: domains, ports, users, database name
+│   │   └── vault.yml             # shared secrets, encrypted with Ansible Vault
+│   └── host_vars/<server>/       # optional, from make vault-init HOST=<server>
+│       └── vault.yml             # that server's own secrets (override the shared ones)
 ├── roles/
 │   ├── common/                   # apt updates, basic tools, swap file
 │   ├── firewall/                 # ufw: deny incoming except 22, 80, 443
@@ -241,7 +252,7 @@ After `make deploy`, on the server (`cd /opt/cloud1`) unless noted:
 | Error | Cause / fix |
 |---|---|
 | `REMOTE HOST IDENTIFICATION HAS CHANGED` | The IP was used by another server before: `ssh-keygen -R <ip>`, then deploy again |
-| `Permission denied (publickey)` | Wrong key or user: check `private_key_file` / `remote_user` in `ansible.cfg` |
+| `Permission denied (publickey)` | Wrong key or user: check `ansible_ssh_private_key_file` in `hosts.yml` / `remote_user` in `ansible.cfg` |
 | `no space left on device` | Disk too small for the images: grow it to 20 GB |
 | certbot: `Timeout during connect` | Port 80 blocked: open it in the cloud security group |
 | certbot: `DNS problem` | DuckDNS not pointing at the server: check the token (`make vault-edit`) |

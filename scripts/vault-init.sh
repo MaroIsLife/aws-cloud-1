@@ -5,6 +5,11 @@
 #   vault.yml exists, no .vault_pass -> new machine: asks for the EXISTING vault password
 #   no vault.yml                    -> new setup: random vault password + random secrets,
 #                                      asks for the DuckDNS token, writes vault.yml encrypted
+#
+# make vault-init HOST=name: gives that server its OWN secrets (DB + admin passwords) in
+#   inventories/host_vars/<name>/vault.yml, encrypted with the same .vault_pass. host_vars beat
+#   group_vars, so that server uses them and every other server keeps the shared ones.
+#   Run it BEFORE that server's first deploy: MariaDB keeps the passwords it started with.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -14,6 +19,37 @@ PASS=.vault_pass
 # N random letters and digits. head stops reading after N characters, which makes tr exit
 # with "broken pipe": normal here, so pipefail is turned off inside this function only.
 random() ( set +o pipefail; LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c "${1:-32}" )
+
+# 0. Per-server vault
+HOST=${1:-}
+if [ -n "$HOST" ]; then
+    if [ ! -f "$VAULT" ] || [ ! -f "$PASS" ]; then
+        echo "Set up the shared vault first: make vault-init" >&2
+        exit 1
+    fi
+    if ! ansible-inventory --host "$HOST" > /dev/null 2>&1; then
+        echo "No server named '$HOST' in inventories/hosts.yml. Nothing written." >&2
+        exit 1
+    fi
+    HOST_VAULT=inventories/host_vars/$HOST/vault.yml
+    if [ -f "$HOST_VAULT" ]; then
+        echo "$HOST already has its own vault ($HOST_VAULT). Nothing to do."
+        echo "Show: make vault-view HOST=$HOST    Change: make vault-edit HOST=$HOST"
+        exit 0
+    fi
+    mkdir -p "$(dirname "$HOST_VAULT")"
+    cat <<EOF | ansible-vault encrypt --output "$HOST_VAULT" -
+# $HOST's own secrets (override group_vars/all/vault.yml for this server only).
+# The DuckDNS token stays in the shared vault.
+vault_db_password: $(random 32)
+vault_db_root_password: $(random 32)
+vault_wp_admin_password: $(random 24)
+vault_wp_admin2_password: $(random 24)
+EOF
+    echo "Created $HOST_VAULT (encrypted with $PASS)."
+    echo "Show: make vault-view HOST=$HOST    Then deploy: make deploy HOST=$HOST"
+    exit 0
+fi
 
 # 1. Everything is already there
 if [ -f "$VAULT" ] && [ -f "$PASS" ]; then

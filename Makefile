@@ -1,27 +1,31 @@
 PLAYBOOK = cloud-one-playbook.yml
+# Optional: target one server, e.g. make deploy HOST=omanar (default: every server)
+LIMIT = $(if $(HOST),--limit $(HOST))
 
 # --- Remote (Ansible -> servers in inventories/hosts.yml)
-ping:           ## Check Ansible can reach every server
-	ansible all -m ping
+ping:           ## Check Ansible can reach every server (or HOST=name)
+	ansible $(or $(HOST),all) -m ping
 
-deploy:         ## Deploy or update every server
-	ansible-playbook $(PLAYBOOK)
+deploy:         ## Deploy or update every server (or HOST=name)
+	ansible-playbook $(PLAYBOOK) $(LIMIT)
 
 check:          ## Dry run: show what deploy WOULD change
-	ansible-playbook $(PLAYBOOK) --check --diff
+	ansible-playbook $(PLAYBOOK) --check --diff $(LIMIT)
 
 syntax:         ## Check the playbook for YAML/syntax errors
 	ansible-playbook $(PLAYBOOK) --syntax-check
 
 # --- Secrets (inventories/group_vars/all/vault.yml, unlocked by .vault_pass)
-vault-init:     ## First thing on a new machine or setup: creates or unlocks the vault
-	@./scripts/vault-init.sh
+# HOST=name works on that server's own vault instead: inventories/host_vars/<name>/vault.yml
+VAULT_FILE = $(if $(HOST),inventories/host_vars/$(HOST)/vault.yml,inventories/group_vars/all/vault.yml)
+vault-init:     ## First thing on a new machine or setup: creates or unlocks the vault (HOST=name: that server's own secrets)
+	@./scripts/vault-init.sh $(HOST)
 
 vault-view:     ## Show the decrypted secrets
-	ansible-vault view inventories/group_vars/all/vault.yml
+	ansible-vault view $(VAULT_FILE)
 
 vault-edit:     ## Edit the secrets (decrypts, opens your editor, re-encrypts)
-	ansible-vault edit inventories/group_vars/all/vault.yml
+	ansible-vault edit $(VAULT_FILE)
 
 # --- Local (Docker on your Mac, from srcs/)
 local-up:       ## Start the stack locally and install WordPress if needed
