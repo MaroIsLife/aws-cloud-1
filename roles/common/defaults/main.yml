@@ -1,0 +1,3 @@
+# Size of the swap file: overflow memory for a 1 GB RAM instance. 1G is enough for this stack
+# and leaves disk space for the Docker images (an existing /swapfile is never resized).
+swap_size: 1G

@@ -1,0 +1,7 @@
+# wait: true holds here until the healthcheck says MariaDB accepts connections
+- name: Start MariaDB
+  community.docker.docker_compose_v2:
+    project_src: "{{ app_dir }}"
+    services: [mariadb]
+    state: present
+    wait: true

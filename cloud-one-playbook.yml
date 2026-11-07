@@ -1,0 +1,23 @@
+- name: Deploy Cloud-1
+  hosts: webservers
+  become: true
+  roles:
+    # 1. Prepare and secure the server
+    - common        # apt updates, basic tools, swap
+    - firewall      # ufw: only 22, 80, 443 reachable
+    - ssh           # key-only SSH, no root login
+    - dns           # DuckDNS
+    - docker        # Docker Engine + Compose plugin
+    # 2. Put the project on it
+    - setup         # copy docker-compose.yml, write .env
+    # 3. Start each service, in dependency order (one container each)
+    - database      # MariaDB
+    - phpmyadmin    # phpMyAdmin
+    - wordpress     # WordPress (php-fpm) + automatic install
+    - nginx         # the only public entry point
+    # 4. HTTPS
+    - tls           # Let's Encrypt certificate, switch nginx to HTTPS, nightly renewal
+
+
+
+#https://docs.ansible.com/projects/ansible/latest/collections/index.html

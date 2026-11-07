@@ -1,0 +1,5 @@
+- name: Start phpMyAdmin
+  community.docker.docker_compose_v2:
+    project_src: "{{ app_dir }}"
+    services: [phpmyadmin]
+    state: present

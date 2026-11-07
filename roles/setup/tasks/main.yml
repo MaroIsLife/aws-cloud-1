@@ -1,0 +1,32 @@
+- name: Create the project folder
+  ansible.builtin.file:
+    path: "{{ app_dir }}"
+    state: directory
+    mode: "0755"
+
+# The same file you run locally in srcs/: one source of truth
+- name: Copy docker-compose.yml
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/srcs/docker-compose.yml"
+    dest: "{{ app_dir }}/docker-compose.yml"
+    mode: "0644"
+
+# Shared by nginx and certbot: certificates (conf) and Let's Encrypt challenge files (www)
+- name: Create the certbot folders
+  ansible.builtin.file:
+    path: "{{ app_dir }}/certbot/{{ item }}"
+    state: directory
+    mode: "0755"
+  loop: [conf, www]
+
+# Decides NGINX_MODE in .env: https if this server already has its certificate, http otherwise
+- name: Check whether the certificate already exists
+  ansible.builtin.stat:
+    path: "{{ app_dir }}/certbot/conf/live/cloud1/fullchain.pem"
+  register: tls_cert
+
+- name: Write .env with this server's settings and secrets
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ app_dir }}/.env"
+    mode: "0600"

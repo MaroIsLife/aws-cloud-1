@@ -1,0 +1,40 @@
+# Let's Encrypt asks for a file under /.well-known/acme-challenge/ on port 80. certbot writes it
+# into certbot/www, nginx (already running) serves it, Let's Encrypt downloads it, and we get a
+# certificate for both names, saved in certbot/conf/live/cloud1/.
+# --keep-until-expiring: if the certificate is still valid for 30+ days, do nothing.
+- name: Get or renew the Let's Encrypt certificate
+  ansible.builtin.command:
+    cmd: >-
+      docker compose run --rm -T certbot certonly
+      --webroot --webroot-path /var/www/certbot
+      --cert-name cloud1 -d {{ wp_domain }} -d {{ pma_domain }}
+      --email {{ letsencrypt_email }} --agree-tos --no-eff-email
+      --non-interactive --keep-until-expiring
+    chdir: "{{ app_dir }}"
+  register: certbot
+  changed_when: "'Successfully received certificate' in certbot.stdout"
+  notify: Reload nginx
+
+# First deploy only: nginx started in http mode because no certificate existed yet.
+# Now it does, so switch the config folder to https (the setup role does the same on later runs).
+- name: Switch nginx to its HTTPS config
+  ansible.builtin.lineinfile:
+    path: "{{ app_dir }}/.env"
+    regexp: "^NGINX_MODE="
+    line: NGINX_MODE=https
+  register: nginx_mode
+
+- name: Recreate nginx with the HTTPS config
+  community.docker.docker_compose_v2:
+    project_src: "{{ app_dir }}"
+    services: [nginx]
+    state: present
+  when: nginx_mode.changed
+
+# Certificates last 90 days. Every night, renew if less than 30 days are left, then reload nginx.
+- name: Renew the certificate automatically every night
+  ansible.builtin.cron:
+    name: cloud1 certbot renew
+    hour: "3"
+    minute: "0"
+    job: "cd {{ app_dir }} && docker compose run --rm -T certbot renew --quiet && docker compose exec -T nginx nginx -s reload"

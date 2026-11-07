@@ -1,0 +1,5 @@
+# The only ports reachable from outside. Everything else incoming is blocked.
+firewall_allowed_ports:
+  - { port: "22", name: SSH }
+  - { port: "80", name: HTTP }
+  - { port: "443", name: HTTPS }

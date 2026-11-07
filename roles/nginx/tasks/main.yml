@@ -1,0 +1,12 @@
+- name: Copy the nginx config templates
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/srcs/nginx/"
+    dest: "{{ app_dir }}/nginx/"
+    mode: "0644"
+  notify: Restart nginx
+
+- name: Start nginx
+  community.docker.docker_compose_v2:
+    project_src: "{{ app_dir }}"
+    services: [nginx]
+    state: present

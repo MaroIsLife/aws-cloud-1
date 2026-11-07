@@ -1,0 +1,43 @@
+# HTTP mode: used locally, and on a server until its first certificate exists.
+
+# WordPress: static files served directly, .php handed to php-fpm over FastCGI
+server {
+    listen 80;
+    server_name ${WP_DOMAIN};
+
+    # Let's Encrypt checks domain ownership by downloading a file from here (see roles/tls)
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    root /var/www/html;
+    index index.php;
+
+    location / {
+        try_files $uri $uri/ /index.php?$args;
+    }
+
+    location ~ \.php$ {
+        include fastcgi_params;
+        fastcgi_pass wordpress:9000;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+    }
+}
+
+# phpMyAdmin: plain HTTP reverse proxy to its built-in Apache
+server {
+    listen 80;
+    server_name ${PMA_DOMAIN};
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        proxy_pass http://phpmyadmin:80;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}

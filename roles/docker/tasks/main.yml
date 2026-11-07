@@ -1,0 +1,46 @@
+# Docker Engine + Compose plugin from Docker's official apt repository
+- name: Add Docker's apt repository and signing key
+  ansible.builtin.deb822_repository:
+    name: docker
+    types: deb
+    uris: https://download.docker.com/linux/ubuntu
+    suites: "{{ ansible_distribution_release }}"
+    components: stable
+    architectures: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
+    signed_by: https://download.docker.com/linux/ubuntu/gpg
+    state: present
+  register: docker_repo
+
+- name: Refresh apt so it sees the new repository
+  ansible.builtin.apt:
+    update_cache: true
+  when: docker_repo.changed
+
+- name: Install Docker Engine and the Compose plugin
+  ansible.builtin.apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-compose-plugin
+    state: present
+
+# Enabled = starts at boot, so the containers come back after a reboot
+- name: Start Docker and enable it at boot
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Let the ubuntu user run docker without sudo
+  ansible.builtin.user:
+    name: "{{ ansible_user | default('ubuntu') }}"
+    groups: docker
+    append: true
+
+# apt keeps every downloaded .deb in /var/cache/apt (~400 MB after Docker + upgrades).
+# They're no longer needed once installed; on an 8 GB disk that space is needed for images.
+- name: Free disk space by deleting downloaded package files
+  ansible.builtin.apt:
+    clean: true
+  changed_when: false

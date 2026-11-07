@@ -1,0 +1,9 @@
+# validate: the file is checked with `sshd -t` BEFORE it's put in place, so a typo
+# can never break SSH and lock us out of the server
+- name: Install the SSH hardening settings
+  ansible.builtin.copy:
+    src: 00-cloud1-hardening.conf
+    dest: /etc/ssh/sshd_config.d/00-cloud1-hardening.conf
+    mode: "0644"
+    validate: /usr/sbin/sshd -t -f %s
+  notify: Reload SSH

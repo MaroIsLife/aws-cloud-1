@@ -1,0 +1,55 @@
+# HTTPS mode: used on a server once its Let's Encrypt certificate exists.
+
+# Port 80 does only two things: answer Let's Encrypt, and send everyone else to HTTPS
+server {
+    listen 80;
+    server_name ${WP_DOMAIN} ${PMA_DOMAIN};
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+# Settings shared by both HTTPS sites. One certificate ("cloud1") covers both names.
+ssl_certificate     /etc/letsencrypt/live/cloud1/fullchain.pem;
+ssl_certificate_key /etc/letsencrypt/live/cloud1/privkey.pem;
+ssl_protocols       TLSv1.2 TLSv1.3;
+
+# WordPress: static files served directly, .php handed to php-fpm over FastCGI
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name ${WP_DOMAIN};
+
+    root /var/www/html;
+    index index.php;
+
+    location / {
+        try_files $uri $uri/ /index.php?$args;
+    }
+
+    location ~ \.php$ {
+        include fastcgi_params;   # includes HTTPS=on, so WordPress knows the visit is secure
+        fastcgi_pass wordpress:9000;
+        fastcgi_param SCRIPT_FILENAME $document_root$fastcgi_script_name;
+    }
+}
+
+# phpMyAdmin: reverse proxy to its built-in Apache (plain HTTP inside the Docker network)
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name ${PMA_DOMAIN};
+
+    location / {
+        proxy_pass http://phpmyadmin:80;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;   # tells phpMyAdmin the visit is HTTPS
+    }
+}

@@ -1,0 +1,5 @@
+# Reload (not restart): sshd re-reads its config, open sessions (like Ansible's) stay connected
+- name: Reload SSH
+  ansible.builtin.service:
+    name: ssh
+    state: reloaded

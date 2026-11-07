@@ -1,0 +1,14 @@
+- name: Start WordPress (php-fpm)
+  community.docker.docker_compose_v2:
+    project_src: "{{ app_dir }}"
+    services: [wordpress]
+    state: present
+
+# wpcli installs WordPress and creates the second admin only if they don't exist yet.
+# Both print "Success: ..." when they do something, so this reports "changed" only then.
+- name: Install WordPress and create the admin accounts if needed
+  ansible.builtin.command: docker compose run --rm -T wpcli
+  args:
+    chdir: "{{ app_dir }}"
+  register: wp_install
+  changed_when: "'Success:' in wp_install.stdout"

@@ -1,0 +1,36 @@
+# All project settings, in one place. Loaded automatically for every server in the inventory.
+
+# --- Where the stack lives on the server
+app_dir: /opt/cloud1
+
+# --- Addresses
+# Each server has its own DuckDNS name (duckdns_subdomain, set per server in hosts.yml).
+# DuckDNS also answers for any name under it, so wp.<name> and pma.<name> need no extra setup.
+http_port: 80
+https_port: 443
+base_domain: "{{ duckdns_subdomain }}.duckdns.org"
+wp_domain: "wp.{{ base_domain }}"
+pma_domain: "pma.{{ base_domain }}"
+duckdns_token: "{{ vault_duckdns_token }}"
+
+# --- TLS (Let's Encrypt): expiry notices are sent to this address
+letsencrypt_email: "{{ wp_admin_email }}"
+
+# --- Database
+db_name: wordpress
+db_user: wpuser
+
+# --- WordPress
+wp_title: Cloud-1
+wp_admin_user: mougnou
+wp_admin_email: mougnou@student.1337.ma
+# Second administrator (the project has two authors)
+wp_admin2_user: omanar
+wp_admin2_email: omanar@student.1337.ma
+
+# --- Secrets: the real values are in vault.yml (next to this file), encrypted with
+# ansible-vault. Ansible decrypts it in memory with the password in .vault_pass.
+db_password: "{{ vault_db_password }}"
+db_root_password: "{{ vault_db_root_password }}"
+wp_admin_password: "{{ vault_wp_admin_password }}"
+wp_admin2_password: "{{ vault_wp_admin2_password }}"

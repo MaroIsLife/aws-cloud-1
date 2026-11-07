@@ -1,0 +1,126 @@
+name: cloud1
+
+services:
+  mariadb:
+    image: mariadb:11.4
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MARIADB_DATABASE: ${DB_NAME}
+      MARIADB_USER: ${DB_USER}
+      MARIADB_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - db_data:/var/lib/mysql
+    networks: [db]
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # php-fpm running WordPress. Speaks FastCGI on port 9000, not HTTP.
+  wordpress:
+    image: wordpress:php8.3-fpm
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    environment:
+      WORDPRESS_DB_HOST: mariadb:3306
+      WORDPRESS_DB_NAME: ${DB_NAME}
+      WORDPRESS_DB_USER: ${DB_USER}
+      WORDPRESS_DB_PASSWORD: ${DB_PASSWORD}
+      # Read on every request, so a new address in .env takes effect without touching the DB
+      WORDPRESS_CONFIG_EXTRA: |
+        define('WP_HOME', '${WP_URL}');
+        define('WP_SITEURL', '${WP_URL}');
+    volumes:
+      - wp_files:/var/www/html
+    networks: [web, db]
+
+  # phpMyAdmin with its own small Apache, reached by nginx over HTTP.
+  phpmyadmin:
+    image: phpmyadmin:5
+    restart: unless-stopped
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    environment:
+      PMA_HOST: mariadb
+    networks: [web, db]
+
+  # The single entry point. Routes by hostname to WordPress or phpMyAdmin.
+  # NGINX_MODE picks the config folder: http (local, or before the first certificate) or https.
+  nginx:
+    image: nginx:stable-alpine
+    restart: unless-stopped
+    depends_on: [wordpress, phpmyadmin]
+    ports:
+      - "${HTTP_PORT}:80"
+      - "${HTTPS_PORT}:443"
+    environment:
+      WP_DOMAIN: ${WP_DOMAIN}
+      PMA_DOMAIN: ${PMA_DOMAIN}
+      # Only fill in variables ending in _DOMAIN, so nginx's own $uri, $host... stay untouched
+      NGINX_ENVSUBST_FILTER: "_DOMAIN$$"
+    volumes:
+      # *.template files are filled with the variables above into /etc/nginx/conf.d at start
+      - ./nginx/${NGINX_MODE}:/etc/nginx/templates:ro
+      - wp_files:/var/www/html:ro
+      # Shared with certbot: the certificates, and the challenge files Let's Encrypt downloads
+      - ./certbot/conf:/etc/letsencrypt:ro
+      - ./certbot/www:/var/www/certbot:ro
+    networks: [web]
+
+  # One-shot job: gets or renews the Let's Encrypt certificate, then exits.
+  # In the "tls" profile, so `up` ignores it; roles/tls runs it with `docker compose run`.
+  certbot:
+    image: certbot/certbot:v3.0.1
+    profiles: [tls]
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    restart: "no"
+
+  # One-shot job: installs WordPress and creates the second admin if needed, then exits.
+  # In the "setup" profile, so `up` ignores it; run it with `docker compose run --rm wpcli`.
+  wpcli:
+    image: wordpress:cli-php8.3
+    profiles: [setup]
+    user: "33:33"
+    depends_on:
+      mariadb:
+        condition: service_healthy
+      wordpress:
+        condition: service_started
+    environment:
+      WORDPRESS_DB_HOST: mariadb:3306
+      WORDPRESS_DB_NAME: ${DB_NAME}
+      WORDPRESS_DB_USER: ${DB_USER}
+      WORDPRESS_DB_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - wp_files:/var/www/html
+    networks: [db]
+    restart: "no"
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        until [ -f /var/www/html/wp-config.php ]; do echo "waiting for wp-config..."; sleep 2; done
+        wp core is-installed || wp core install \
+          --url="${WP_URL}" --title="${WP_TITLE}" \
+          --admin_user="${WP_ADMIN_USER}" --admin_password="${WP_ADMIN_PASSWORD}" \
+          --admin_email="${WP_ADMIN_EMAIL}" --skip-email
+        # Second administrator: created only if the account doesn't exist yet
+        wp user get "${WP_ADMIN2_USER}" --field=ID > /dev/null 2>&1 || wp user create \
+          "${WP_ADMIN2_USER}" "${WP_ADMIN2_EMAIL}" --role=administrator \
+          --user_pass="${WP_ADMIN2_PASSWORD}"
+
+volumes:
+  db_data:
+  wp_files:
+
+networks:
+  web:
+  db:
+    internal: true

@@ -1,0 +1,15 @@
+# Real secrets never go into git
+.env
+*.pem
+
+# Unlocks the vault: never commit it (vault.yml itself is encrypted and IS committed)
+.vault_pass
+
+# Old generated passwords (now in the vault)
+credentials/
+
+# Let's Encrypt certificates and challenge files (created when nginx runs)
+srcs/certbot/
+
+# Every login in plain text
+passwords.txt

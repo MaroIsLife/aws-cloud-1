@@ -1,0 +1,16 @@
+- name: Check the DuckDNS token is in the vault
+  ansible.builtin.assert:
+    that: duckdns_token != 'PUT_YOUR_DUCKDNS_TOKEN_HERE'
+    fail_msg: "Put your DuckDNS token in the vault first: make vault-edit"
+    quiet: true
+
+# DuckDNS's API is one URL: "set <name>.duckdns.org to this IP".
+# verbose=true makes it answer UPDATED or NOCHANGE, so Ansible reports "changed" honestly.
+- name: Point {{ duckdns_subdomain }}.duckdns.org at this server
+  ansible.builtin.uri:
+    url: "https://www.duckdns.org/update?domains={{ duckdns_subdomain }}&token={{ duckdns_token }}&ip={{ ansible_host }}&verbose=true"
+    return_content: true
+  register: duckdns
+  changed_when: "'UPDATED' in duckdns.content"
+  failed_when: "not duckdns.content.startswith('OK')"
+  no_log: true   # the URL contains the token: keep it out of the output

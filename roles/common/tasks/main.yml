@@ -1,0 +1,38 @@
+- name: Update the apt cache and apply security/bug-fix upgrades
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+    upgrade: safe
+
+- name: Install basic tools
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - python3-debian
+    state: present
+
+# Swap: disk space used as overflow RAM, so the kernel doesn't kill MariaDB when memory runs out
+- name: Create the swap file
+  ansible.builtin.command: fallocate -l {{ swap_size }} /swapfile
+  args:
+    creates: /swapfile
+  register: swapfile
+
+- name: Restrict swap file permissions
+  ansible.builtin.file:
+    path: /swapfile
+    mode: "0600"
+
+- name: Format the swap file
+  ansible.builtin.command: mkswap /swapfile
+  when: swapfile.changed
+
+- name: Enable swap now
+  ansible.builtin.command: swapon /swapfile
+  when: ansible_swaptotal_mb == 0
+
+- name: Enable swap at every boot
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    line: /swapfile none swap sw 0 0
